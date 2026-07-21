@@ -2,11 +2,8 @@
 
 [![CI](https://github.com/eliachiarucci/serterm/actions/workflows/ci.yml/badge.svg)](https://github.com/eliachiarucci/serterm/actions/workflows/ci.yml)
 
-A simple serial terminal for the command line. Pick a device, watch its
-output stream, type on the bottom line to send messages back.
-
-Built for talking to Arduinos, STM32 boards, and anything else that speaks
-serial.
+A simple serial terminal for the command line.
+Talk to anything that speaks serial.
 
 ![SerTerm](images/demo.gif)
 
