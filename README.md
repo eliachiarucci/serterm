@@ -12,6 +12,28 @@ serial.
 
 ## Install
 
+**macOS / Linux**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/eliachiarucci/serterm/main/install.sh | sh
+```
+
+Installs the latest release to `/usr/local/bin` (or `~/.local/bin` if that
+isn't writable).
+
+**Windows**
+
+Download the zip for your architecture from the
+[latest release](https://github.com/eliachiarucci/serterm/releases/latest),
+extract `serterm.exe`, and put it somewhere on your `PATH`.
+
+**Packages**
+
+`.deb`, `.rpm`, and `.apk` packages are attached to each
+[release](https://github.com/eliachiarucci/serterm/releases).
+
+**With Go**
+
 ```sh
 go install github.com/eliachiarucci/serterm@latest
 ```
