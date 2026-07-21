@@ -1,0 +1,77 @@
+version: 2
+
+project_name: serterm
+
+before:
+  hooks:
+    - go mod tidy
+
+# The serial-port enumerator (go.bug.st/serial/enumerator) is pure Go on
+# linux/windows but needs cgo (IOKit) on darwin, so darwin is a separate
+# build and the release job must run on a macOS runner.
+builds:
+  - id: linux-windows
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+  - id: darwin
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+
+nfpms:
+  - package_name: serterm
+    homepage: https://github.com/eliachiarucci/serterm
+    maintainer: Elia Chiarucci <elia.chiarucci@gmail.com>
+    description: A small serial terminal for the command line.
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - apk
+    bindir: /usr/bin
+    section: utils
+
+release:
+  github:
+    owner: eliachiarucci
+    name: serterm
+  draft: false
+  prerelease: auto
