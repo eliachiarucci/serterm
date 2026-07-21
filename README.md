@@ -26,12 +26,6 @@ extract `serterm.exe`, and put it on your `PATH`.
 `.deb`, `.rpm`, and `.apk` packages are attached to each
 [release](https://github.com/eliachiarucci/serterm/releases).
 
-**With Go**
-
-```sh
-go install github.com/eliachiarucci/serterm@latest
-```
-
 Or build from source (see [Build](#build) below).
 
 ## Usage
