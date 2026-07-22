@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"go.bug.st/serial"
 )
@@ -25,8 +25,7 @@ type serialDataMsg []byte
 // serialClosedMsg reports that reading stopped (unplugged device, I/O error).
 type serialClosedMsg struct{ err error }
 
-// terminalModel is the streaming screen: device output on top, input line at
-// the bottom.
+// terminalModel is the streaming screen: device output on top, input line at the bottom.
 type terminalModel struct {
 	port   serial.Port
 	device string
@@ -34,6 +33,7 @@ type terminalModel struct {
 
 	viewport viewport.Model
 	input    textinput.Model
+	focusCmd tea.Cmd // cursor blink command captured at construction
 	content  string
 
 	reads        chan tea.Msg  // filled by the reader goroutine
@@ -50,14 +50,16 @@ func newTerminalModel(port serial.Port, device string, baud, width, height int) 
 	input := textinput.New()
 	input.Prompt = "❯ "
 	input.Placeholder = "type a message, enter to send"
-	input.Focus()
+	input.SetWidth(inputWidth(width, input.Prompt))
+	focusCmd := input.Focus()
 
 	m := terminalModel{
 		port:     port,
 		device:   device,
 		baud:     baud,
-		viewport: viewport.New(width, max(height-terminalChrome, 1)),
+		viewport: viewport.New(viewport.WithWidth(width), viewport.WithHeight(max(height-terminalChrome, 1))),
 		input:    input,
+		focusCmd: focusCmd,
 		reads:    make(chan tea.Msg),
 		done:     make(chan struct{}),
 		width:    width,
@@ -65,6 +67,10 @@ func newTerminalModel(port serial.Port, device string, baud, width, height int) 
 	}
 	go m.readLoop()
 	return m
+}
+
+func inputWidth(termWidth int, prompt string) int {
+	return max(termWidth-lipgloss.Width(prompt), 10)
 }
 
 // readLoop runs in a goroutine and forwards device output to the UI.
@@ -104,15 +110,16 @@ func (m terminalModel) waitForSerial() tea.Cmd {
 }
 
 func (m terminalModel) Init() tea.Cmd {
-	return tea.Batch(textinput.Blink, m.waitForSerial())
+	return tea.Batch(m.focusCmd, m.waitForSerial())
 }
 
 func (m terminalModel) Update(msg tea.Msg) (terminalModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.viewport.Width = msg.Width
-		m.viewport.Height = max(msg.Height-terminalChrome, 1)
+		m.viewport.SetWidth(msg.Width)
+		m.viewport.SetHeight(max(msg.Height-terminalChrome, 1))
+		m.input.SetWidth(inputWidth(msg.Width, m.input.Prompt))
 		m.refreshViewport()
 		m.viewport.GotoBottom()
 		return m, nil
@@ -128,7 +135,7 @@ func (m terminalModel) Update(msg tea.Msg) (terminalModel, tea.Cmd) {
 		}
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c":
 			m.shutdown()
@@ -143,7 +150,9 @@ func (m terminalModel) Update(msg tea.Msg) (terminalModel, tea.Cmd) {
 			m.refreshViewport()
 			m.viewport.GotoTop()
 			return m, nil
-		case "pgup", "pgdown", "home", "end":
+		// up/down is what the mouse wheel produces in alternate scroll
+		// mode, which the emulator uses because mouse reporting is off.
+		case "up", "down", "pgup", "pgdown", "home", "end":
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
 			return m, cmd

@@ -77,6 +77,10 @@ serterm open --send "status" /dev/cu.usbmodem1101 3   # send a command, capture 
 | `pgup`/`pgdn` | scroll the output |
 | `ctrl+c` | quit |
 
+The output also scrolls with the mouse wheel (via the emulator's alternate
+scroll mode). serterm never captures the mouse, so your terminal's native
+text selection and copy shortcuts work as usual.
+
 Sent messages are echoed in the stream prefixed with `→`. If the device is
 unplugged, a notice appears and `ctrl+d` returns to the picker.
 

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 var baudRates = []int{9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600}
@@ -49,7 +49,7 @@ func (m pickerModel) Update(msg tea.Msg) (pickerModel, tea.Cmd) {
 	case openFailedMsg:
 		m.err = msg.err
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "q", "ctrl+c", "ctrl+d":
 			return m, tea.Quit

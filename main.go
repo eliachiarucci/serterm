@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"os"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"go.bug.st/serial"
 )
 
@@ -96,11 +96,14 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m appModel) View() string {
+func (m appModel) View() tea.View {
+	content := m.picker.View()
 	if m.screen == screenTerminal {
-		return m.terminal.View()
+		content = m.terminal.View()
 	}
-	return m.picker.View()
+	v := tea.NewView(content)
+	v.AltScreen = true
+	return v
 }
 
 func main() {
@@ -121,7 +124,11 @@ func main() {
 		model = *tui
 	}
 
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	// Alternate scroll mode (DECSET 1007)
+	fmt.Print("\x1b[?1007h")
+	defer fmt.Print("\x1b[?1007l")
+
+	p := tea.NewProgram(model)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
