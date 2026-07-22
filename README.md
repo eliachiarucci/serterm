@@ -40,19 +40,26 @@ There are also a few subcommands:
 | Command | Action |
 |---------|--------|
 | `serterm list` | list connected serial devices (device, tab, description) |
-| `serterm open [--baud N] <device>` | connect and go straight to the terminal screen |
-| `serterm open [--baud N] <device> <secs>` | stream logs to stdout for `secs` seconds (max 60), then exit |
-| `serterm open --send "text" <device> <secs>` | send a line to the device, then stream the response |
+| `serterm open <device> [flags]` | connect and stream logs to stdout until interrupted (`ctrl+c`) |
 | `serterm update` | update serterm to the latest release (runs the install script) |
 | `serterm help` | show usage |
 
-The timed form of `open` is designed for scripts and AI agents: it needs no
-TTY, prints raw device output, and always releases the port when it exits.
-Without a time limit, `open` refuses to run if stdout is not a terminal.
+`open` flags (single or double dash both work):
+
+| Flag | Action |
+|------|--------|
+| `-b`, `--baud N` | baud rate (default 115200) |
+| `-s`, `--send TEXT` | send `TEXT` to the device after opening, `\n` appended (the response shows up in the stream) |
+| `-ca`, `--close-after N` | exit after `N` seconds (max 60) |
+| `-c`, `--close` | close right after sending, without reading a response (use with `--send` to just fire a message) |
+
+`open` is designed for scripts and AI agents: it needs no TTY, prints raw
+device output, and always releases the port when it exits.
 
 ```sh
-serterm open --baud 9600 /dev/cu.usbmodem1101 5   # capture 5 seconds of logs
-serterm open --send "status" /dev/cu.usbmodem1101 3   # send a command, capture the reply
+serterm open /dev/cu.usbmodem1101 -b 9600 -ca 5   # capture 5 seconds of logs
+serterm open /dev/cu.usbmodem1101 -s "status" -ca 3   # send a command, capture the reply
+serterm open /dev/cu.usbmodem1101 -s "reboot" -c   # just send a message and close
 ```
 
 `serterm --version` prints the version.
