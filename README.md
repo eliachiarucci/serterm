@@ -3,7 +3,6 @@
 [![CI](https://github.com/eliachiarucci/serterm/actions/workflows/ci.yml/badge.svg)](https://github.com/eliachiarucci/serterm/actions/workflows/ci.yml)
 
 A simple serial terminal for the command line.
-With AI agent-friendly commands.
 
 ![SerTerm](images/demo.gif)
 
@@ -44,7 +43,7 @@ There are also a few subcommands:
 | `serterm update` | update serterm to the latest release (runs the install script) |
 | `serterm help` | show usage |
 
-`open` flags (single or double dash both work):
+`open` flags:
 
 | Flag | Action |
 |------|--------|
@@ -52,9 +51,6 @@ There are also a few subcommands:
 | `-s`, `--send TEXT` | send `TEXT` to the device after opening, `\n` appended (the response shows up in the stream) |
 | `-ca`, `--close-after N` | exit after `N` seconds (max 60) |
 | `-c`, `--close` | close right after sending, without reading a response (use with `--send` to just fire a message) |
-
-`open` is designed for scripts and AI agents: it needs no TTY, prints raw
-device output, and always releases the port when it exits.
 
 ```sh
 serterm open /dev/cu.usbmodem1101 -b 9600 -ca 5   # capture 5 seconds of logs
