@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
@@ -18,35 +17,35 @@ import (
 const usageText = `serterm — a serial terminal for the command line
 
 usage:
-  serterm                                start the interactive device picker
-  serterm list                           list connected serial devices
-  serterm open [flags] <device> [seconds]   connect to a device; with [seconds] the
-                                         logs stream to stdout for that many
-                                         seconds (max 60) and then serterm
-                                         exits (handy for scripts and agents)
-  serterm update                         update serterm to the latest release
-  serterm help                           show this help (also -h, --help)
+  serterm                        start the interactive device picker
+  serterm list                   list connected serial devices
+  serterm open <device> [flags]  connect to a device and stream its logs to
+                                 stdout until interrupted (ctrl+c)
+  serterm update                 update serterm to the latest release
+  serterm help                   show this help (also -h, --help)
 
 open flags (single or double dash both work):
-  --baud N      baud rate (default 115200)
-  --send TEXT   send TEXT to the device after opening, \n appended
-                (requires a time limit or -i; the response shows up in the stream)
-  -i, --inline  stream logs inline to stdout until interrupted (ctrl+c),
-                instead of opening the interactive screen
+  -b,  --baud N         baud rate (default 115200)
+  -s,  --send TEXT      send TEXT to the device after opening, \n appended
+                        (the response shows up in the stream)
+  -ca, --close-after N  exit after N seconds (max 60; handy for scripts
+                        and agents)
+  -c,  --close          close right after sending, without reading a response
+                        (use with --send to just fire a message)
 
 examples:
   serterm list
   serterm open /dev/cu.usbmodem1101
-  serterm open --baud 9600 /dev/cu.usbmodem1101
-  serterm open --baud 115200 --send "status" /dev/cu.usbmodem1101 3
-  serterm open -i /dev/cu.usbmodem1101
+  serterm open /dev/cu.usbmodem1101 -b 9600
+  serterm open /dev/cu.usbmodem1101 -s "status" -ca 3
+  serterm open /dev/cu.usbmodem1101 -s "reboot" -c
 
 serterm --version prints the version.
 `
 
-// runCommand dispatches the non-TUI subcommands. It returns the model to run
-// as a TUI, or nil if the command completed (or failed) headlessly.
-func runCommand(args []string) *appModel {
+// runCommand dispatches the subcommands. All subcommands run headlessly; the
+// TUI only starts when serterm is invoked with no arguments.
+func runCommand(args []string) {
 	switch args[0] {
 	case "list":
 		if err := runList(); err != nil {
@@ -55,7 +54,7 @@ func runCommand(args []string) *appModel {
 		}
 
 	case "open":
-		return runOpen(args[1:])
+		runOpen(args[1:])
 
 	case "update":
 		if err := runUpdate(); err != nil {
@@ -70,7 +69,6 @@ func runCommand(args []string) *appModel {
 		fmt.Fprintf(os.Stderr, "unknown command %q\n\n%s", args[0], usageText)
 		os.Exit(2)
 	}
-	return nil
 }
 
 // runList prints the connected serial devices, one per line.
@@ -93,46 +91,66 @@ func runList() error {
 	return nil
 }
 
-// runOpen handles `serterm open`. Without a duration it returns a TUI model
-// that goes straight to the terminal screen; with a duration or -i it streams
-// headlessly to stdout.
-func runOpen(args []string) *appModel {
-	fs := flag.NewFlagSet("open", flag.ExitOnError)
-	baud := fs.Int("baud", baudRates[defaultBaudIndex], "baud rate")
-	send := fs.String("send", "", "text to send to the device after opening (a \\n is appended)")
-	var inline bool
-	fs.BoolVar(&inline, "i", false, "stream logs inline to stdout until interrupted")
-	fs.BoolVar(&inline, "inline", false, "stream logs inline to stdout until interrupted")
-	fs.Parse(args)
-
-	device, duration, err := parseOpenArgs(fs.Args())
+// runOpen handles `serterm open`: it streams the device's logs to stdout,
+// optionally sending a message first, until interrupted or -ca expires.
+// With -c it just sends and closes.
+func runOpen(args []string) {
+	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help") {
+		fmt.Print(usageText)
+		return
+	}
+	device, flagArgs, err := parseOpenArgs(args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n\n%s", err, usageText)
 		os.Exit(2)
 	}
 
-	if duration == 0 && !inline {
-		if *send != "" {
-			fmt.Fprintln(os.Stderr, "error: -send requires a time limit or -i, e.g. serterm open -send \"cmd\" "+device+" 5")
-			os.Exit(2)
-		}
-		// Refuse to start the interactive screen when output is piped
-		// (e.g. a script or agent): a forgotten background TUI would hold
-		// the port open indefinitely.
-		if fi, err := os.Stdout.Stat(); err == nil && fi.Mode()&os.ModeCharDevice == 0 {
-			fmt.Fprintln(os.Stderr, "error: stdout is not a terminal; pass a time limit or -i, e.g. serterm open "+device+" 5")
-			os.Exit(2)
-		}
-		m := newAppModel()
-		m.initial = &portSelectedMsg{device: device, baud: *baud}
-		return &m
+	fs := flag.NewFlagSet("open", flag.ExitOnError)
+	fs.Usage = func() { fmt.Print(usageText) }
+	var baud int
+	fs.IntVar(&baud, "b", baudRates[defaultBaudIndex], "baud rate")
+	fs.IntVar(&baud, "baud", baudRates[defaultBaudIndex], "baud rate")
+	var send string
+	fs.StringVar(&send, "s", "", "text to send to the device after opening (a \\n is appended)")
+	fs.StringVar(&send, "send", "", "text to send to the device after opening (a \\n is appended)")
+	var closeAfter float64
+	fs.Float64Var(&closeAfter, "ca", 0, "exit after N seconds")
+	fs.Float64Var(&closeAfter, "close-after", 0, "exit after N seconds")
+	var closeNow bool
+	fs.BoolVar(&closeNow, "c", false, "close right after sending, without reading a response")
+	fs.BoolVar(&closeNow, "close", false, "close right after sending, without reading a response")
+	fs.Parse(flagArgs)
+
+	if fs.NArg() > 0 {
+		fmt.Fprintf(os.Stderr, "error: unexpected argument %q\n\n%s", fs.Arg(0), usageText)
+		os.Exit(2)
+	}
+	duration, err := parseCloseAfter(closeAfter)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n\n%s", err, usageText)
+		os.Exit(2)
 	}
 
-	if err := startInlineStream(device, *baud, duration, *send); err != nil {
+	if closeNow {
+		if duration > 0 {
+			fmt.Fprintln(os.Stderr, "error: --close cannot be combined with --close-after")
+			os.Exit(2)
+		}
+		if send == "" {
+			fmt.Fprintln(os.Stderr, "error: --close requires --send, e.g. serterm open "+device+" -s \"reboot\" -c")
+			os.Exit(2)
+		}
+		if err := sendAndClose(device, baud, send); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	if err := startInlineStream(device, baud, duration, send); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
-	return nil
 }
 
 const installScriptURL = "https://raw.githubusercontent.com/eliachiarucci/serterm/main/install.sh"
@@ -196,26 +214,43 @@ func isUpToDate(current, latestTag string) bool {
 // maxOpenSeconds caps the time limit of a timed open.
 const maxOpenSeconds = 60
 
-// parseOpenArgs validates the positional arguments of the open command.
-// A zero duration means "no time limit was given".
-func parseOpenArgs(args []string) (device string, duration time.Duration, err error) {
-	switch len(args) {
-	case 1:
-		return args[0], 0, nil
-	case 2:
-		secs, perr := strconv.ParseFloat(args[1], 64)
-		if perr != nil || secs <= 0 {
-			return "", 0, fmt.Errorf("invalid duration %q: expected a positive number of seconds", args[1])
-		}
-		if secs > maxOpenSeconds {
-			return "", 0, fmt.Errorf("duration %q exceeds the maximum of %d seconds", args[1], maxOpenSeconds)
-		}
-		return args[0], time.Duration(secs * float64(time.Second)), nil
-	case 0:
-		return "", 0, fmt.Errorf("open requires a device, e.g. serterm open /dev/cu.usbmodem1101")
-	default:
-		return "", 0, fmt.Errorf("open takes at most a device and a number of seconds")
+// parseOpenArgs splits the open command's arguments into the device (which
+// must come first) and the flags that follow it.
+func parseOpenArgs(args []string) (device string, flags []string, err error) {
+	if len(args) == 0 {
+		return "", nil, fmt.Errorf("open requires a device, e.g. serterm open /dev/cu.usbmodem1101")
 	}
+	if strings.HasPrefix(args[0], "-") {
+		return "", nil, fmt.Errorf("the device comes before the flags, e.g. serterm open /dev/cu.usbmodem1101 -b 9600")
+	}
+	return args[0], args[1:], nil
+}
+
+// parseCloseAfter validates the --close-after flag value. A zero duration
+// means the flag was not given.
+func parseCloseAfter(secs float64) (time.Duration, error) {
+	if secs < 0 {
+		return 0, fmt.Errorf("invalid --close-after value %v: expected a positive number of seconds", secs)
+	}
+	if secs > maxOpenSeconds {
+		return 0, fmt.Errorf("--close-after value %v exceeds the maximum of %d seconds", secs, maxOpenSeconds)
+	}
+	return time.Duration(secs * float64(time.Second)), nil
+}
+
+// sendAndClose opens the device, writes the message, and closes the port
+// without reading a response.
+func sendAndClose(device string, baud int, send string) error {
+	port, err := serial.Open(device, &serial.Mode{BaudRate: baud})
+	if err != nil {
+		return fmt.Errorf("cannot open %s: %w", device, err)
+	}
+	defer port.Close()
+
+	if _, err := port.Write([]byte(send + "\n")); err != nil {
+		return fmt.Errorf("write to %s failed: %w", device, err)
+	}
+	return port.Drain()
 }
 
 // startInlineStream copies device output to stdout.

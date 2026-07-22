@@ -31,27 +31,21 @@ func TestIsUpToDate(t *testing.T) {
 
 func TestParseOpenArgs(t *testing.T) {
 	tests := []struct {
-		name     string
-		args     []string
-		device   string
-		duration time.Duration
-		wantErr  bool
+		name    string
+		args    []string
+		device  string
+		flags   []string
+		wantErr bool
 	}{
 		{name: "device only", args: []string{"/dev/cu.usb"}, device: "/dev/cu.usb"},
-		{name: "device and seconds", args: []string{"/dev/cu.usb", "5"}, device: "/dev/cu.usb", duration: 5 * time.Second},
-		{name: "fractional seconds", args: []string{"/dev/cu.usb", "0.5"}, device: "/dev/cu.usb", duration: 500 * time.Millisecond},
+		{name: "device then flags", args: []string{"/dev/cu.usb", "-b", "9600"}, device: "/dev/cu.usb", flags: []string{"-b", "9600"}},
 		{name: "no device", args: nil, wantErr: true},
-		{name: "negative seconds", args: []string{"/dev/cu.usb", "-3"}, wantErr: true},
-		{name: "zero seconds", args: []string{"/dev/cu.usb", "0"}, wantErr: true},
-		{name: "non-numeric seconds", args: []string{"/dev/cu.usb", "soon"}, wantErr: true},
-		{name: "max seconds", args: []string{"/dev/cu.usb", "60"}, device: "/dev/cu.usb", duration: 60 * time.Second},
-		{name: "over max seconds", args: []string{"/dev/cu.usb", "61"}, wantErr: true},
-		{name: "too many args", args: []string{"/dev/cu.usb", "5", "extra"}, wantErr: true},
+		{name: "flag before device", args: []string{"-b", "9600", "/dev/cu.usb"}, wantErr: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			device, duration, err := parseOpenArgs(tt.args)
+			device, flags, err := parseOpenArgs(tt.args)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("parseOpenArgs(%v): expected error, got none", tt.args)
@@ -61,9 +55,50 @@ func TestParseOpenArgs(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parseOpenArgs(%v): unexpected error: %v", tt.args, err)
 			}
-			if device != tt.device || duration != tt.duration {
-				t.Fatalf("parseOpenArgs(%v) = (%q, %v), want (%q, %v)",
-					tt.args, device, duration, tt.device, tt.duration)
+			if device != tt.device {
+				t.Fatalf("parseOpenArgs(%v) device = %q, want %q", tt.args, device, tt.device)
+			}
+			if len(flags) != len(tt.flags) {
+				t.Fatalf("parseOpenArgs(%v) flags = %v, want %v", tt.args, flags, tt.flags)
+			}
+			for i := range flags {
+				if flags[i] != tt.flags[i] {
+					t.Fatalf("parseOpenArgs(%v) flags = %v, want %v", tt.args, flags, tt.flags)
+				}
+			}
+		})
+	}
+}
+
+func TestParseCloseAfter(t *testing.T) {
+	tests := []struct {
+		name     string
+		secs     float64
+		duration time.Duration
+		wantErr  bool
+	}{
+		{name: "not given", secs: 0, duration: 0},
+		{name: "whole seconds", secs: 5, duration: 5 * time.Second},
+		{name: "fractional seconds", secs: 0.5, duration: 500 * time.Millisecond},
+		{name: "max seconds", secs: 60, duration: 60 * time.Second},
+		{name: "negative seconds", secs: -3, wantErr: true},
+		{name: "over max seconds", secs: 61, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			duration, err := parseCloseAfter(tt.secs)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("parseCloseAfter(%v): expected error, got none", tt.secs)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseCloseAfter(%v): unexpected error: %v", tt.secs, err)
+			}
+			if duration != tt.duration {
+				t.Fatalf("parseCloseAfter(%v) = %v, want %v", tt.secs, duration, tt.duration)
 			}
 		})
 	}

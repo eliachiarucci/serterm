@@ -47,10 +47,6 @@ type appModel struct {
 	terminal terminalModel
 	width    int
 	height   int
-
-	// initial, when set, is a device to connect to immediately on startup
-	// (the `open` command), skipping the picker.
-	initial *portSelectedMsg
 }
 
 func newAppModel() appModel {
@@ -58,10 +54,6 @@ func newAppModel() appModel {
 }
 
 func (m appModel) Init() tea.Cmd {
-	if m.initial != nil {
-		selected := *m.initial
-		return tea.Batch(m.picker.Init(), func() tea.Msg { return selected })
-	}
 	return m.picker.Init()
 }
 
@@ -81,9 +73,10 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.terminal.Init()
 
 	case backToPickerMsg:
+		// Keep the existing picker model so the cursor and baud selection
+		// stay where the user left them; just rescan the ports.
 		m.screen = screenPicker
-		m.picker = newPickerModel()
-		return m, m.picker.Init()
+		return m, refreshPorts
 	}
 
 	var cmd tea.Cmd
@@ -115,20 +108,16 @@ func main() {
 		return
 	}
 
-	model := newAppModel()
 	if args := flag.Args(); len(args) > 0 {
-		tui := runCommand(args)
-		if tui == nil {
-			return
-		}
-		model = *tui
+		runCommand(args)
+		return
 	}
 
 	// Alternate scroll mode (DECSET 1007)
 	fmt.Print("\x1b[?1007h")
 	defer fmt.Print("\x1b[?1007l")
 
-	p := tea.NewProgram(model)
+	p := tea.NewProgram(newAppModel())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
